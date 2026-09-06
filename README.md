@@ -86,9 +86,10 @@ como PWA nem funciona offline** por HTTP simples; use a Opção A para o uso rea
 | **Manter a tela acesa** | Funciona no iOS **16.4+** (Wake Lock), pedido ao tocar em ▶. Em versões antigas a tela pode apagar — aí deixe o *Bloqueio automático* do iPhone em “Nunca” durante a gravação. |
 | **Travar orientação** | O Safari do iPhone **não** deixa o site travar a orientação. A interface se adapta a retrato e paisagem, mas quem trava é você (Central de Controle). |
 | **Acompanhar a voz** | O reconhecimento de voz da Web no Safari/iOS é **instável**: exige internet, pede permissão de microfone, corta sozinho com frequência e às vezes não funciona dentro do PWA. Por isso é **experimental** e **opcional** — o teleprompter funciona 100% sem ele, no modo velocidade. Se falhar, o app volta sozinho para o modo velocidade. |
-| **Câmera + gravação juntas** | A pré‑visualização da câmera frontal atrás do texto **funciona** no iOS 15+. O botão de **gravar** (círculo vermelho) só aparece se o seu Safari suportar `MediaRecorder` — se não suportar, o app avisa ao ligar a câmera. Qualidade menor que o app Câmera nativo. |
-| **Salvar o vídeo gravado** | Quando a gravação para, aparece **"Salvar vídeo"** na barra de cima (e no resumo final). Ele abre a folha de compartilhamento do iOS (`navigator.share`) → escolha **Salvar em Fotos** ou **em Arquivos**. O PWA não grava sozinho no Rolo. |
-| **Recomendação para vídeo profissional** | Use **dois aparelhos**: grave com a câmera do iPhone (ou câmera dedicada) e use este app em outro aparelho como teleprompter na frente da lente. Ou use o modo espelho com um vidro de teleprompter. O modo câmera embutido é ótimo para Reels/TikTok rápidos. |
+| **Gravar vídeo dentro do app** | **Não existe mais.** O `MediaRecorder` do Safari no iPhone entrega o vídeo congelado depois de poucos segundos — é uma falha do iOS que um app web não tem como contornar. O botão foi removido para não ser um botão que não funciona. |
+| **Modo "📹 Gravar" (Picture‑in‑Picture)** | O roteiro vira uma **janelinha flutuante** e você grava pelo **app Câmera do iPhone** — o texto **não entra no vídeo**. Controle de pausar/continuar pelos botões da própria janelinha. A velocidade é ajustada antes de ativar (fica travada depois). Precisa de **iOS 16.4+**. É experimental: se o iOS congelar o desenho da janelinha em segundo plano, não há solução por app web. |
+| **Prévia da câmera** | Mostra sua câmera frontal atrás do texto, dentro do app — só para você se enquadrar / ensaiar. Não grava nada. |
+| **Recomendação para vídeo profissional** | O caminho mais confiável ainda é **dois aparelhos** (grava num, teleprompter no outro) ou **vidro de teleprompter** com o Modo Espelho. O modo PiP resolve quando você só tem um iPhone e ele é iOS 16.4+. |
 
 ### O que funciona offline
 Tudo o que é local: abrir o app, lista de roteiros, criar/editar/salvar, buscar,
@@ -96,7 +97,8 @@ teleprompter, pausas, ensaio, espelho, todas as configurações.
 
 ### O que depende do navegador / precisa de permissão ou internet
 - **Acompanhar a voz** — microfone + internet (experimental).
-- **Modo câmera / gravação** — permissão de câmera (e microfone ao gravar).
+- **Prévia da câmera** — permissão de câmera.
+- **Modo "📹 Gravar" (PiP)** — iOS 16.4+ (Picture‑in‑Picture no iPhone).
 - **Manter a tela acesa** — Wake Lock (iOS 16.4+).
 - **Instalação e modo offline** — precisam de HTTPS (hospedagem).
 
