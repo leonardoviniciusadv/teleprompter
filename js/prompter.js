@@ -680,28 +680,44 @@
       topbar.querySelector('.p-top-right').appendChild(saveBtn);
     }
     function toggleRecording() { state.recording ? stopRecording() : startRecording(); }
+
+    var recTimer = null, recStartTs = 0;
     function startRecording() {
       var mime = recMime();
       if (!mime) return toast('Gravação não suportada neste navegador');
-      // adiciona áudio do microfone só agora
-      navigator.mediaDevices.getUserMedia({ audio: true, video: false }).then(function (aud) {
-        var tracks = camStream.getVideoTracks().concat(aud.getAudioTracks());
-        var mix = new MediaStream(tracks);
+      state.recTried = true;
+      toast('Preparando a gravação…');
+
+      // No Safari do iPhone, câmera e microfone TÊM que vir da mesma chamada
+      // getUserMedia. Pedir o áudio numa segunda chamada derruba o vídeo — e a
+      // gravação/preview "congela". Então trocamos o stream só‑vídeo por um
+      // stream vídeo+áudio antes de gravar.
+      var haveAudio = camStream && camStream.getAudioTracks && camStream.getAudioTracks().length;
+      var ready = haveAudio
+        ? Promise.resolve(camStream)
+        : navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'user', width: { ideal: 1280 } }, audio: true
+          }).then(function (av) {
+            var old = camStream;
+            camStream = av;
+            video.srcObject = av;
+            video.play().catch(function () {});
+            if (old) old.getTracks().forEach(function (t) { t.stop(); });
+            return av;
+          });
+
+      ready.then(function (stream) {
         try {
-          state.recorder = new MediaRecorder(mix, { mimeType: mime });
-        } catch (e) {
-          aud.getTracks().forEach(function (t) { t.stop(); });
-          state.recTried = true;
-          return toast('Não foi possível iniciar a gravação neste navegador.');
-        }
+          state.recorder = new MediaRecorder(stream, { mimeType: mime });
+        } catch (e) { state.recorder = null; }
+        if (!state.recorder) return toast('Não foi possível iniciar a gravação neste navegador.');
+
         state.chunks = [];
-        state.recTried = true;
         state.recorder.ondataavailable = function (e) { if (e.data && e.data.size) state.chunks.push(e.data); };
         state.recorder.onerror = function () { toast('Erro na gravação.'); };
         state.recorder.onstop = function () {
-          aud.getTracks().forEach(function (t) { t.stop(); });
-          // no iOS o MediaRecorder entrega tudo num único chunk no stop; o tipo real
-          // vem do próprio gravador (não do que pedimos).
+          // no iOS o MediaRecorder entrega tudo num único chunk no stop; o tipo
+          // real vem do próprio gravador (não do que pedimos).
           var realType = (state.recorder && state.recorder.mimeType) || mime;
           var blob = new Blob(state.chunks, { type: realType });
           if (!state.chunks.length || blob.size < 1024) {
@@ -713,21 +729,41 @@
             showTopSaveBtn();
             toast('Gravação pronta. Toque em “Salvar vídeo”.');
           }
-          if (state.finished) showSummary(); // reconstrói o resumo já com o botão
+          if (state.finished) showSummary();
         };
-        // SEM timeslice: no Safari do iPhone, gravar com start(ms) gera um arquivo
-        // que não pode ser remontado ("WebKitBlobResource erro 1").
+
+        // SEM timeslice: start(ms) no iOS gera arquivo que não remonta.
         state.recorder.start();
         state.recording = true;
         recBtn.classList.add('on');
-      }).catch(function (e) { state.recTried = true; toast('Microfone negado: ' + (e && e.name || e)); });
+        // contador visível: mesmo que o preview congele, ele mostra que a
+        // gravação continua viva.
+        recStartTs = Date.now();
+        recBtn.textContent = '';
+        recBtn.appendChild(h('span', { class: 'rec-dot' }));
+        var lbl = h('span', { class: 'rec-time', text: '0:00' });
+        recBtn.appendChild(lbl);
+        clearInterval(recTimer);
+        recTimer = setInterval(function () {
+          var s = Math.floor((Date.now() - recStartTs) / 1000);
+          lbl.textContent = Math.floor(s / 60) + ':' + (s % 60 < 10 ? '0' : '') + (s % 60);
+          if (video.paused) video.play().catch(function () {}); // destrava o preview no iOS
+        }, 500);
+      }).catch(function (e) {
+        toast('Câmera/microfone negados: ' + (e && e.name || e));
+      });
     }
     function stopRecording() {
+      clearInterval(recTimer);
       if (state.recorder && state.recorder.state !== 'inactive') {
         try { state.recorder.stop(); } catch (e) {}
       }
       state.recording = false;
-      if (recBtn) recBtn.classList.remove('on');
+      if (recBtn) {
+        recBtn.classList.remove('on');
+        recBtn.textContent = '';
+        recBtn.appendChild(h('span', { class: 'rec-dot' }));
+      }
     }
     function shareRecording() {
       var blob = state.lastRecordingBlob;
@@ -940,6 +976,7 @@
         cancelAnimationFrame(rafId);
         clearTimeout(hideTimer);
         clearInterval(pauseTimer);
+        clearInterval(recTimer);
         if (state.speech) state.speech.stop();
         stopCam();
         if (wakeLock) { try { wakeLock.release(); } catch (e) {} }

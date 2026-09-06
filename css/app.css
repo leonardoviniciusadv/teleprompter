@@ -319,11 +319,14 @@ a { color: var(--accent); text-decoration: none; }
 .p-toggle.on { background: #fff; color: #000; }
 
 .rec-btn {
-  width: 40px; height: 40px; border-radius: 50%; background: rgba(255,255,255,.14);
-  display: grid; place-items: center; backdrop-filter: blur(6px);
+  min-width: 40px; height: 40px; padding: 0 6px; border-radius: 999px; background: rgba(255,255,255,.14);
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px; backdrop-filter: blur(6px);
 }
-.rec-dot { width: 16px; height: 16px; border-radius: 50%; background: #ff453a; transition: border-radius .2s, transform .2s; }
-.rec-btn.on .rec-dot { border-radius: 4px; transform: scale(.8); }
+.rec-dot { width: 16px; height: 16px; border-radius: 50%; background: #ff453a; flex: none; transition: border-radius .2s, transform .2s; }
+.rec-btn.on { background: rgba(255,69,58,.22); padding: 0 12px 0 8px; }
+.rec-btn.on .rec-dot { border-radius: 4px; transform: scale(.8); animation: recpulse 1.4s ease-in-out infinite; }
+.rec-time { color: #fff; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+@keyframes recpulse { 50% { opacity: .35; } }
 
 /* HUD ensaio */
 .hud {
