@@ -270,15 +270,27 @@
       state.totalWords = cum;
 
       var first = anchors[0], last = anchors[anchors.length - 1];
+      var vpH = viewport.clientHeight;
       state.startOffset = first ? (first.top - state.readingLineY) : 0;
-      state.maxOffset = last ? (last.top - state.readingLineY) : 0;
 
-      // px por palavra = distância real de rolagem dividida pelo nº de palavras.
-      // Assim, a 1,0× o roteiro inteiro leva ≈ (palavras / ppm) minutos, e as
-      // pausas programadas (rolagem congelada) somam por cima — igual à
-      // estimativa mostrada no editor.
-      var span = state.maxOffset - state.startOffset;
-      state.pxPerWord = state.totalWords > 0 ? (span / state.totalWords) : 40;
+      // Não parar quando a ÚLTIMA frase só encosta na linha de leitura — aí ela
+      // ainda não deu tempo de ser lida. Rola até o FIM dela chegar à linha
+      // (mais uma folga curta), sem jogar a frase toda pra fora da tela.
+      var lastBottom = last ? (last.top + (last.el.offsetHeight || 0)) : 0;
+      if (last) {
+        var target = lastBottom - state.readingLineY + Math.round(vpH * 0.06);
+        var floor = (last.top - state.readingLineY) + Math.round((last.el.offsetHeight || 0) * 0.5);
+        state.maxOffset = Math.max(target, floor);
+      } else {
+        state.maxOffset = 0;
+      }
+
+      // px por palavra: altura real do texto (topo da 1ª frase até o fim da
+      // última) dividida pelo nº de palavras. A 1,0× o roteiro leva ≈
+      // (palavras / ppm); as pausas somam por cima. A folga extra do maxOffset
+      // é só "corredor" pós-fala e não entra nessa conta.
+      var readSpan = (first && last) ? (lastBottom - first.top) : 0;
+      state.pxPerWord = (state.totalWords > 0 && readSpan > 0) ? (readSpan / state.totalWords) : 40;
 
       if (state.offset < state.startOffset) state.offset = state.startOffset;
       armPauses();
@@ -456,6 +468,7 @@
       state.running = false;
       bigMsg.className = 'big-msg';
       hideSummary();
+      hideEndHint();
       armPauses();
       applyOffset(); refreshActive(true);
       playBtn.innerHTML = iconPlay();
@@ -467,10 +480,24 @@
       state.finished = true;
       playBtn.innerHTML = iconRestart();
       if (state.speech) state.speech.stop();
-      if (state.recording) stopRecording(); // onstop reconstrói o resumo com o botão de salvar
-      showSummary();
       showControls();
+      if (state.recording) {
+        // Gravando: NÃO corta a gravação no fim do texto — você pode estar
+        // terminando a fala (fecho, CTA). Continue e toque no ⏹ quando acabar;
+        // o resumo aparece quando a gravação parar.
+        showEndHint();
+        return;
+      }
+      showSummary();
     }
+
+    var endHint = null;
+    function showEndHint() {
+      if (endHint) return;
+      endHint = h('div', { class: 'end-hint', text: 'Fim do roteiro — toque no ⏹ vermelho quando terminar de falar.' });
+      stage.appendChild(endHint);
+    }
+    function hideEndHint() { if (endHint) { endHint.remove(); endHint = null; } }
 
     /* ---------------- navegação ---------------- */
     function seekTo(off) {
@@ -735,6 +762,7 @@
         // SEM timeslice: start(ms) no iOS gera arquivo que não remonta.
         state.recorder.start();
         state.recording = true;
+        scr.classList.add('is-recording');
         recBtn.classList.add('on');
         // contador visível: mesmo que o preview congele, ele mostra que a
         // gravação continua viva.
@@ -755,10 +783,12 @@
     }
     function stopRecording() {
       clearInterval(recTimer);
+      hideEndHint();
       if (state.recorder && state.recorder.state !== 'inactive') {
         try { state.recorder.stop(); } catch (e) {}
       }
       state.recording = false;
+      scr.classList.remove('is-recording');
       if (recBtn) {
         recBtn.classList.remove('on');
         recBtn.textContent = '';

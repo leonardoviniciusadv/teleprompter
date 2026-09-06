@@ -359,6 +359,16 @@ a { color: var(--accent); text-decoration: none; }
 .hide-ui .p-top { opacity: 0; transform: translateY(-100%); pointer-events: none; }
 .hide-ui .p-controls { opacity: 0; transform: translateY(100%); pointer-events: none; }
 .hide-ui .hud { opacity: .5; }
+/* durante a gravação, a barra de cima (com o ⏹ e o contador) nunca some */
+.hide-ui.is-recording .p-top { opacity: 1; transform: none; pointer-events: auto; }
+
+.end-hint {
+  position: absolute; left: 50%; bottom: calc(var(--safe-b) + 128px); transform: translateX(-50%);
+  z-index: 9; max-width: 82vw; text-align: center;
+  background: rgba(0,0,0,.62); color: #fff; font-size: 13px; line-height: 1.5;
+  padding: 10px 16px; border-radius: 12px; backdrop-filter: blur(4px);
+}
+.prompter[data-ptheme="light"] .end-hint { background: rgba(20,20,15,.82); }
 
 .nav-row { display: flex; align-items: center; justify-content: center; gap: 6px; flex-wrap: nowrap; }
 .nav-btn {

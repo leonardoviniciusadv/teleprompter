@@ -1,6 +1,6 @@
 /* Service Worker — cache do app shell para uso offline.
    Ao alterar arquivos, aumente CACHE_VERSION. */
-var CACHE_VERSION = 'tp-v4';
+var CACHE_VERSION = 'tp-v5';
 var ASSETS = [
   './',
   './index.html',
