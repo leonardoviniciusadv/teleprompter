@@ -200,20 +200,49 @@
     vid.setAttribute('playsinline', ''); vid.setAttribute('webkit-playsinline', '');
     vid.style.cssText = 'position:fixed;width:2px;height:2px;opacity:0;pointer-events:none;left:0;bottom:0';
 
-    // áudio silencioso: ajuda a manter o desenho vivo em 2º plano no iOS
-    var silence = null;
+    // Manter o desenho vivo com o Safari em 2º plano: o iOS só continua
+    // executando timers de uma página em background enquanto ela está
+    // REPRODUZINDO áudio. Usamos um <audio> em loop, quase inaudível, além
+    // de um AudioContext (que precisa de resume() dentro do gesto).
+    var silence = null, keepAudio = null;
+    function silentWav(seconds) {
+      var sr = 8000, n = Math.floor(sr * seconds), total = 44 + n * 2;
+      var buf = new ArrayBuffer(total), v = new DataView(buf);
+      function s(o, str) { for (var i = 0; i < str.length; i++) v.setUint8(o + i, str.charCodeAt(i)); }
+      s(0, 'RIFF'); v.setUint32(4, total - 8, true); s(8, 'WAVE'); s(12, 'fmt ');
+      v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+      v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true);
+      v.setUint16(34, 16, true); s(36, 'data'); v.setUint32(40, n * 2, true);
+      // 1 amostra baixíssima a cada ~200ms só para não ser "silêncio absoluto"
+      for (var i = 0; i < n; i += sr / 5) v.setInt16(44 + i * 2, 8, true);
+      var u8 = new Uint8Array(buf), bin = '';
+      for (var j = 0; j < u8.length; j++) bin += String.fromCharCode(u8[j]);
+      return 'data:audio/wav;base64,' + btoa(bin);
+    }
     function keepAlive() {
       try {
-        var Ac = global.AudioContext || global.webkitAudioContext;
-        if (!Ac) return;
-        var ac = new Ac();
-        var osc = ac.createOscillator();
-        var g = ac.createGain();
-        g.gain.value = 0.0001;
-        osc.connect(g); g.connect(ac.destination);
-        osc.start();
-        silence = { ac: ac, osc: osc };
+        keepAudio = new Audio(silentWav(1));
+        keepAudio.loop = true;
+        keepAudio.volume = 0.02;
+        keepAudio.setAttribute('playsinline', '');
       } catch (e) {}
+      try {
+        var Ac = global.AudioContext || global.webkitAudioContext;
+        if (Ac) {
+          var ac = new Ac();
+          var osc = ac.createOscillator();
+          var g = ac.createGain();
+          g.gain.value = 0.0002;
+          osc.connect(g); g.connect(ac.destination);
+          osc.start();
+          silence = { ac: ac, osc: osc };
+        }
+      } catch (e) {}
+    }
+    // roda DENTRO do gesto (enterPiP): destrava o áudio
+    function armKeepAlive() {
+      if (keepAudio) { keepAudio.play().catch(function () {}); }
+      if (silence && silence.ac && silence.ac.state === 'suspended') { silence.ac.resume().catch(function () {}); }
     }
 
     // Prepara canvas → stream → vídeo tocando. NÃO precisa de gesto do usuário.
@@ -242,6 +271,7 @@
 
     // Chamar DENTRO do handler do toque do usuário.
     function enterPiP() {
+      armKeepAlive();
       var call;
       if (vid.requestPictureInPicture) call = vid.requestPictureInPicture();
       else if (vid.webkitSetPresentationMode) { vid.webkitSetPresentationMode('picture-in-picture'); call = Promise.resolve(); }
@@ -277,6 +307,7 @@
       vid.srcObject = null;
       if (vid.parentNode) vid.parentNode.removeChild(vid);
       if (silence) { try { silence.osc.stop(); silence.ac.close(); } catch (e) {} silence = null; }
+      if (keepAudio) { try { keepAudio.pause(); keepAudio.src = ''; } catch (e) {} keepAudio = null; }
     }
 
     return {
