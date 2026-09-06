@@ -318,15 +318,6 @@ a { color: var(--accent); text-decoration: none; }
 }
 .p-toggle.on { background: #fff; color: #000; }
 
-.rec-btn {
-  min-width: 40px; height: 40px; padding: 0 6px; border-radius: 999px; background: rgba(255,255,255,.14);
-  display: inline-flex; align-items: center; justify-content: center; gap: 7px; backdrop-filter: blur(6px);
-}
-.rec-dot { width: 16px; height: 16px; border-radius: 50%; background: #ff453a; flex: none; transition: border-radius .2s, transform .2s; }
-.rec-btn.on { background: rgba(255,69,58,.22); padding: 0 12px 0 8px; }
-.rec-btn.on .rec-dot { border-radius: 4px; transform: scale(.8); animation: recpulse 1.4s ease-in-out infinite; }
-.rec-time { color: #fff; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
-@keyframes recpulse { 50% { opacity: .35; } }
 
 /* HUD ensaio */
 .hud {
@@ -359,16 +350,6 @@ a { color: var(--accent); text-decoration: none; }
 .hide-ui .p-top { opacity: 0; transform: translateY(-100%); pointer-events: none; }
 .hide-ui .p-controls { opacity: 0; transform: translateY(100%); pointer-events: none; }
 .hide-ui .hud { opacity: .5; }
-/* durante a gravação, a barra de cima (com o ⏹ e o contador) nunca some */
-.hide-ui.is-recording .p-top { opacity: 1; transform: none; pointer-events: auto; }
-
-.end-hint {
-  position: absolute; left: 50%; bottom: calc(var(--safe-b) + 128px); transform: translateX(-50%);
-  z-index: 9; max-width: 82vw; text-align: center;
-  background: rgba(0,0,0,.62); color: #fff; font-size: 13px; line-height: 1.5;
-  padding: 10px 16px; border-radius: 12px; backdrop-filter: blur(4px);
-}
-.prompter[data-ptheme="light"] .end-hint { background: rgba(20,20,15,.82); }
 
 .nav-row { display: flex; align-items: center; justify-content: center; gap: 6px; flex-wrap: nowrap; }
 .nav-btn {
@@ -435,7 +416,6 @@ a { color: var(--accent); text-decoration: none; }
 .summary-grid b { display: block; font-size: 22px; font-variant-numeric: tabular-nums; }
 .summary-grid span { font-size: 11px; color: var(--muted); }
 .summary-card .btn { margin: 0; }
-.summary-note { font-size: 12px; color: var(--muted); text-align: center; line-height: 1.5; }
 
 /* ---------------- orientação ---------------- */
 @media (orientation: landscape) and (max-height: 520px) {

@@ -107,7 +107,8 @@
         toggleBtn('Ensaio', 'rehearse', S ? false : false, toggleRehearse),
         SpeechFollow.supported() ? toggleBtn('Voz', 'voice', S.voiceFollow, toggleVoice) : null,
         toggleBtn('Espelho', 'mirror', S.mirror, toggleMirror),
-        camAvailable() ? toggleBtn('Câmera', 'cam', false, toggleCam) : null
+        camAvailable() ? toggleBtn('Prévia', 'cam', false, toggleCam) : null,
+        pipAvailable() ? toggleBtn('📹 Gravar', 'pip', false, togglePiP) : null
       ])
     ]);
     scr.appendChild(topbar);
@@ -171,9 +172,7 @@
       mirror: S.mirror,
       voiceTargetOffset: null,
       voiceTargetAt: 0,
-      speech: null,
-      recorder: null, chunks: [], recording: false,
-      recTried: false, lastRecordingBlob: null, recMime: null
+      speech: null
     };
 
     var wakeLock = null;
@@ -468,7 +467,6 @@
       state.running = false;
       bigMsg.className = 'big-msg';
       hideSummary();
-      hideEndHint();
       armPauses();
       applyOffset(); refreshActive(true);
       playBtn.innerHTML = iconPlay();
@@ -481,23 +479,8 @@
       playBtn.innerHTML = iconRestart();
       if (state.speech) state.speech.stop();
       showControls();
-      if (state.recording) {
-        // Gravando: NÃO corta a gravação no fim do texto — você pode estar
-        // terminando a fala (fecho, CTA). Continue e toque no ⏹ quando acabar;
-        // o resumo aparece quando a gravação parar.
-        showEndHint();
-        return;
-      }
       showSummary();
     }
-
-    var endHint = null;
-    function showEndHint() {
-      if (endHint) return;
-      endHint = h('div', { class: 'end-hint', text: 'Fim do roteiro — toque no ⏹ vermelho quando terminar de falar.' });
-      stage.appendChild(endHint);
-    }
-    function hideEndHint() { if (endHint) { endHint.remove(); endHint = null; } }
 
     /* ---------------- navegação ---------------- */
     function seekTo(off) {
@@ -619,12 +602,6 @@
             sItem(String(state.totalWords), 'Palavras'),
             sItem(String(avg || '—'), 'ppm médio')
           ]),
-          state.lastRecordingBlob ? h('button', {
-            class: 'btn btn-line', text: 'Salvar / compartilhar vídeo', onclick: shareRecording
-          }) : null,
-          (state.recTried && !state.lastRecordingBlob) ? h('div', {
-            class: 'summary-note', text: 'A gravação não funcionou neste navegador. Grave com o app Câmera do iPhone usando este app só como teleprompter.'
-          }) : null,
           h('button', { class: 'btn btn-primary', text: 'Refazer', onclick: restart }),
           h('button', { class: 'btn btn-ghost', text: 'Sair', onclick: exit })
         ])
@@ -642,7 +619,7 @@
       applyOffset();
     }
 
-    /* ---------------- câmera ---------------- */
+    /* ---------------- câmera: prévia dentro do app ---------------- */
     function camAvailable() {
       return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
     }
@@ -660,186 +637,83 @@
           state.cam = true;
           scr.classList.add('has-cam');
           setToggle('cam', true);
-          maybeAddRecordBtn();
         })
-        .catch(function (e) {
-          toast('Câmera indisponível: ' + (e && e.name || e));
-        });
+        .catch(function (e) { toast('Câmera indisponível: ' + (e && e.name || e)); });
     }
     function stopCam() {
-      if (state.recording) stopRecording();
       if (camStream) camStream.getTracks().forEach(function (t) { t.stop(); });
       camStream = null; video.srcObject = null;
       state.cam = false;
       scr.classList.remove('has-cam');
       setToggle('cam', false);
-      removeRecordBtn();
     }
 
-    /* ---------------- gravação (quando suportada) ---------------- */
-    var recBtn = null;
-    function recMime() {
-      if (!global.MediaRecorder) return null;
-      var list = ['video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
-      for (var i = 0; i < list.length; i++) {
-        try { if (MediaRecorder.isTypeSupported(list[i])) return list[i]; } catch (e) {}
-      }
-      return null;
+    /* ---------------- Modo "Gravar no iPhone" (Picture‑in‑Picture) ----------------
+       O iOS/Safari não grava vídeo de forma confiável dentro de um app web
+       (o arquivo sai congelado). Solução: transformar o roteiro numa
+       janelinha flutuante (PiP) e você grava pelo APP CÂMERA do iPhone.
+       O texto não entra no vídeo — é uma camada do sistema. */
+    var pip = null;
+    function pipAvailable() { return !!(global.PiPPrompter && PiPPrompter.supported()); }
+    function togglePiP() {
+      if (pip) { pip.stop(); return; }
+      openPiPSheet();
     }
-    var recWarned = false;
-    function maybeAddRecordBtn() {
-      if (recBtn) return;
-      if (!recMime()) {
-        if (!recWarned) {
-          recWarned = true;
-          toast('Este navegador não grava vídeo. Use o app Câmera do iPhone com o app só como teleprompter.');
-        }
+    function openPiPSheet() {
+      if (!pipAvailable()) {
+        toast('Este iPhone/Safari não suporta a janelinha flutuante (precisa de iOS 16.4+).');
         return;
       }
-      recBtn = h('button', { class: 'rec-btn', 'aria-label': 'Gravar vídeo', onclick: toggleRecording, html: '<span class="rec-dot"></span>' });
-      topbar.querySelector('.p-top-right').appendChild(recBtn);
-    }
-    function removeRecordBtn() { if (recBtn) { recBtn.remove(); recBtn = null; } }
-    var saveBtn = null;
-    function showTopSaveBtn() {
-      if (saveBtn || !state.lastRecordingBlob) return;
-      saveBtn = h('button', { class: 'p-toggle on', text: '⤓ Salvar vídeo', onclick: shareRecording });
-      topbar.querySelector('.p-top-right').appendChild(saveBtn);
-    }
-    function toggleRecording() { state.recording ? stopRecording() : startRecording(); }
+      pause();
 
-    var recTimer = null, recStartTs = 0;
-    function startRecording() {
-      var mime = recMime();
-      if (!mime) return toast('Gravação não suportada neste navegador');
-      state.recTried = true;
-      toast('Preparando a gravação…');
-
-      // No Safari do iPhone, câmera e microfone TÊM que vir da mesma chamada
-      // getUserMedia. Pedir o áudio numa segunda chamada derruba o vídeo — e a
-      // gravação/preview "congela". Então trocamos o stream só‑vídeo por um
-      // stream vídeo+áudio antes de gravar.
-      var haveAudio = camStream && camStream.getAudioTracks && camStream.getAudioTracks().length;
-      var ready = haveAudio
-        ? Promise.resolve(camStream)
-        : navigator.mediaDevices.getUserMedia({
-            video: { facingMode: 'user', width: { ideal: 1280 } }, audio: true
-          }).then(function (av) {
-            var old = camStream;
-            camStream = av;
-            video.srcObject = av;
-            video.play().catch(function () {});
-            if (old) old.getTracks().forEach(function (t) { t.stop(); });
-            return av;
-          });
-
-      ready.then(function (stream) {
-        try {
-          state.recorder = new MediaRecorder(stream, { mimeType: mime });
-        } catch (e) { state.recorder = null; }
-        if (!state.recorder) return toast('Não foi possível iniciar a gravação neste navegador.');
-
-        state.chunks = [];
-        state.recorder.ondataavailable = function (e) { if (e.data && e.data.size) state.chunks.push(e.data); };
-        state.recorder.onerror = function () { toast('Erro na gravação.'); };
-        state.recorder.onstop = function () {
-          // no iOS o MediaRecorder entrega tudo num único chunk no stop; o tipo
-          // real vem do próprio gravador (não do que pedimos).
-          var realType = (state.recorder && state.recorder.mimeType) || mime;
-          var blob = new Blob(state.chunks, { type: realType });
-          if (!state.chunks.length || blob.size < 1024) {
-            state.lastRecordingBlob = null;
-            toast('A gravação saiu vazia — este navegador não suporta bem.');
-          } else {
-            state.lastRecordingBlob = blob;
-            state.recMime = realType;
-            showTopSaveBtn();
-            toast('Gravação pronta. Toque em “Salvar vídeo”.');
-          }
-          if (state.finished) showSummary();
-        };
-
-        // SEM timeslice: start(ms) no iOS gera arquivo que não remonta.
-        state.recorder.start();
-        state.recording = true;
-        scr.classList.add('is-recording');
-        recBtn.classList.add('on');
-        // contador visível: mesmo que o preview congele, ele mostra que a
-        // gravação continua viva.
-        recStartTs = Date.now();
-        recBtn.textContent = '';
-        recBtn.appendChild(h('span', { class: 'rec-dot' }));
-        var lbl = h('span', { class: 'rec-time', text: '0:00' });
-        recBtn.appendChild(lbl);
-        clearInterval(recTimer);
-        recTimer = setInterval(function () {
-          var s = Math.floor((Date.now() - recStartTs) / 1000);
-          lbl.textContent = Math.floor(s / 60) + ':' + (s % 60 < 10 ? '0' : '') + (s % 60);
-          if (video.paused) video.play().catch(function () {}); // destrava o preview no iOS
-        }, 500);
-      }).catch(function (e) {
-        toast('Câmera/microfone negados: ' + (e && e.name || e));
+      // cria e PREPARA o vídeo já — assim o "Ativar" chama o PiP dentro do gesto
+      pip = PiPPrompter.create({
+        segs: state.parsed.segs,
+        settings: S,
+        speed: state.speed,
+        onEnd: function () { toast('Fim do roteiro — encerre a gravação quando quiser.'); },
+        onExit: function () { pip = null; setToggle('pip', false); toast('Modo câmera encerrado.'); }
       });
-    }
-    function stopRecording() {
-      clearInterval(recTimer);
-      hideEndHint();
-      if (state.recorder && state.recorder.state !== 'inactive') {
-        try { state.recorder.stop(); } catch (e) {}
-      }
-      state.recording = false;
-      scr.classList.remove('is-recording');
-      if (recBtn) {
-        recBtn.classList.remove('on');
-        recBtn.textContent = '';
-        recBtn.appendChild(h('span', { class: 'rec-dot' }));
-      }
-    }
-    function shareRecording() {
-      var blob = state.lastRecordingBlob;
-      if (!blob) return;
-      // tipo "limpo" pra folha de compartilhamento do iOS não estranhar
-      var t = blob.type || state.recMime || '';
-      var shareType = /mp4/i.test(t) ? 'video/mp4' : (/webm/i.test(t) ? 'video/webm' : (t || 'video/mp4'));
-      var file = null;
-      try { file = new File([blob], recName(), { type: shareType }); }
-      catch (e) { file = null; }
+      var prep = pip.prepare();
 
-      if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
-        navigator.share({ files: [file], title: 'Vídeo' }).then(function () {
-          toast('Vídeo enviado. Escolha “Salvar em Vídeos”.');
-        }).catch(function (err) {
-          // AbortError = usuário cancelou; qualquer outra coisa = mostra o player
-          if (err && err.name === 'AbortError') return;
-          showInlinePlayer(blob);
-        });
-        return;
-      }
-      showInlinePlayer(blob);
-    }
-
-    // Último recurso: mostra o vídeo na própria tela; no iPhone dá pra segurar o
-    // vídeo e tocar em "Salvar em Vídeos".
-    function showInlinePlayer(blob) {
-      var url = URL.createObjectURL(blob);
-      var back = h('div', { class: 'sheet-back show' });
-      var v = h('video', { src: url, controls: '', playsinline: '', style: 'width:100%;border-radius:12px;background:#000' });
+      var back = h('div', { class: 'sheet-back' });
+      var spd = h('input', { class: 'speed-slider', type: 'range', min: 0.4, max: 2.0, step: 0.05, value: state.speed });
+      var spdVal = h('span', { class: 'speed-val', text: fmtX(state.speed) });
+      spd.addEventListener('input', function () { setSpeed(parseFloat(spd.value)); spdVal.textContent = fmtX(state.speed); });
+      var goBtn = h('button', { class: 'btn btn-primary', text: 'Ativar', onclick: function () { activate(); } });
       var sheet = h('div', { class: 'sheet' }, [
-        h('div', { class: 'sheet-title', text: 'Seu vídeo' }),
-        v,
-        h('div', { class: 'sheet-msg', text: 'Segure o vídeo e toque em “Salvar em Vídeos” — ou use o botão de compartilhar do player.' }),
-        h('button', { class: 'btn btn-ghost', text: 'Fechar', onclick: function () {
-          back.remove(); URL.revokeObjectURL(url);
-        } })
+        h('div', { class: 'sheet-title', text: 'Gravar com a câmera do iPhone' }),
+        h('div', { class: 'sheet-msg', html:
+          'O roteiro vira uma <b>janelinha flutuante</b>. Você grava pelo app <b>Câmera</b> ' +
+          'do iPhone — o texto <b>não</b> entra no vídeo.<br><br>' +
+          '1. Toque em <b>Ativar</b>.<br>' +
+          '2. Deslize para sair e abra o app <b>Câmera</b> (modo Vídeo).<br>' +
+          '3. Toque na janelinha para <b>pausar / continuar</b> o texto.<br>' +
+          '4. A velocidade fica travada no modo câmera — ajuste agora:' }),
+        h('div', { class: 'speed-row', style: 'padding:4px 0 10px' }, [spd, spdVal]),
+        goBtn,
+        h('button', { class: 'btn btn-ghost', text: 'Cancelar', onclick: function () { cancel(); } })
       ]);
       back.appendChild(sheet);
-      back.addEventListener('click', function (e) { if (e.target === back) { back.remove(); URL.revokeObjectURL(url); } });
+      back.addEventListener('click', function (e) { if (e.target === back) cancel(); });
       document.body.appendChild(back);
-      v.play().catch(function () {});
-    }
-    function recName() {
-      var ext = (state.recMime && state.recMime.indexOf('mp4') >= 0) ? 'mp4' : 'webm';
-      return 'teleprompter-' + new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '.' + ext;
+      requestAnimationFrame(function () { back.classList.add('show'); });
+
+      function closeSheet() { back.classList.remove('show'); setTimeout(function () { back.remove(); }, 200); }
+      function cancel() { closeSheet(); if (pip) { pip.stop(); pip = null; } }
+      function activate() {
+        goBtn.disabled = true; goBtn.textContent = 'Abrindo…';
+        // atualiza a velocidade escolhida no renderizador do PiP
+        if (pip.setSpeed) pip.setSpeed(state.speed);
+        pip.enterPiP().then(function () {
+          closeSheet();
+          setToggle('pip', true);
+          toast('Janelinha ativa. Abra o app Câmera e grave.');
+        }).catch(function (e) {
+          goBtn.disabled = false; goBtn.textContent = 'Ativar';
+          toast('Não deu para abrir a janelinha: ' + (e && (e.message || e.name) || e));
+        });
+      }
     }
 
     /* ---------------- voz ---------------- */
@@ -1006,7 +880,7 @@
         cancelAnimationFrame(rafId);
         clearTimeout(hideTimer);
         clearInterval(pauseTimer);
-        clearInterval(recTimer);
+        if (pip) { try { pip.stop(); } catch (e) {} pip = null; }
         if (state.speech) state.speech.stop();
         stopCam();
         if (wakeLock) { try { wakeLock.release(); } catch (e) {} }
