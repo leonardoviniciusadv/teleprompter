@@ -172,7 +172,8 @@
       voiceTargetOffset: null,
       voiceTargetAt: 0,
       speech: null,
-      recorder: null, chunks: [], recording: false
+      recorder: null, chunks: [], recording: false,
+      recTried: false, lastRecordingBlob: null, recMime: null
     };
 
     var wakeLock = null;
@@ -466,7 +467,7 @@
       state.finished = true;
       playBtn.innerHTML = iconRestart();
       if (state.speech) state.speech.stop();
-      if (state.recording) stopRecording();
+      if (state.recording) stopRecording(); // onstop reconstrói o resumo com o botão de salvar
       showSummary();
       showControls();
     }
@@ -591,9 +592,11 @@
             sItem(String(state.totalWords), 'Palavras'),
             sItem(String(avg || '—'), 'ppm médio')
           ]),
-          state.lastRecordingUrl ? h('a', {
-            class: 'btn btn-line', href: state.lastRecordingUrl, download: recName(),
-            text: 'Salvar vídeo gravado'
+          state.lastRecordingBlob ? h('button', {
+            class: 'btn btn-line', text: 'Salvar / compartilhar vídeo', onclick: shareRecording
+          }) : null,
+          (state.recTried && !state.lastRecordingBlob) ? h('div', {
+            class: 'summary-note', text: 'A gravação não funcionou neste navegador. Grave com o app Câmera do iPhone usando este app só como teleprompter.'
           }) : null,
           h('button', { class: 'btn btn-primary', text: 'Refazer', onclick: restart }),
           h('button', { class: 'btn btn-ghost', text: 'Sair', onclick: exit })
@@ -656,12 +659,26 @@
       }
       return null;
     }
+    var recWarned = false;
     function maybeAddRecordBtn() {
-      if (recBtn || !recMime()) return;
+      if (recBtn) return;
+      if (!recMime()) {
+        if (!recWarned) {
+          recWarned = true;
+          toast('Este navegador não grava vídeo. Use o app Câmera do iPhone com o app só como teleprompter.');
+        }
+        return;
+      }
       recBtn = h('button', { class: 'rec-btn', 'aria-label': 'Gravar vídeo', onclick: toggleRecording, html: '<span class="rec-dot"></span>' });
       topbar.querySelector('.p-top-right').appendChild(recBtn);
     }
     function removeRecordBtn() { if (recBtn) { recBtn.remove(); recBtn = null; } }
+    var saveBtn = null;
+    function showTopSaveBtn() {
+      if (saveBtn || !state.lastRecordingBlob) return;
+      saveBtn = h('button', { class: 'p-toggle on', text: '⤓ Salvar vídeo', onclick: shareRecording });
+      topbar.querySelector('.p-top-right').appendChild(saveBtn);
+    }
     function toggleRecording() { state.recording ? stopRecording() : startRecording(); }
     function startRecording() {
       var mime = recMime();
@@ -670,26 +687,66 @@
       navigator.mediaDevices.getUserMedia({ audio: true, video: false }).then(function (aud) {
         var tracks = camStream.getVideoTracks().concat(aud.getAudioTracks());
         var mix = new MediaStream(tracks);
-        state.recorder = new MediaRecorder(mix, { mimeType: mime });
+        try {
+          state.recorder = new MediaRecorder(mix, { mimeType: mime });
+        } catch (e) {
+          aud.getTracks().forEach(function (t) { t.stop(); });
+          state.recTried = true;
+          return toast('Não foi possível iniciar a gravação neste navegador.');
+        }
         state.chunks = [];
-        state.recorder.ondataavailable = function (e) { if (e.data.size) state.chunks.push(e.data); };
+        state.recTried = true;
+        state.recorder.ondataavailable = function (e) { if (e.data && e.data.size) state.chunks.push(e.data); };
+        state.recorder.onerror = function () { toast('Erro na gravação.'); };
         state.recorder.onstop = function () {
           aud.getTracks().forEach(function (t) { t.stop(); });
           var blob = new Blob(state.chunks, { type: mime });
-          if (state.lastRecordingUrl) URL.revokeObjectURL(state.lastRecordingUrl);
-          state.lastRecordingUrl = URL.createObjectURL(blob);
-          state.recMime = mime;
-          toast('Gravação pronta — salve no resumo final');
+          if (blob.size < 2048) {
+            state.lastRecordingBlob = null;
+            toast('A gravação saiu vazia — este navegador não suporta bem.');
+          } else {
+            state.lastRecordingBlob = blob;
+            state.recMime = mime;
+            showTopSaveBtn();
+            toast('Gravação pronta. Toque em “Salvar vídeo”.');
+          }
+          if (state.finished) showSummary(); // reconstrói o resumo já com o botão
         };
-        state.recorder.start();
+        state.recorder.start(1000);
         state.recording = true;
         recBtn.classList.add('on');
-      }).catch(function (e) { toast('Microfone negado: ' + (e && e.name || e)); });
+      }).catch(function (e) { state.recTried = true; toast('Microfone negado: ' + (e && e.name || e)); });
     }
     function stopRecording() {
-      if (state.recorder && state.recorder.state !== 'inactive') state.recorder.stop();
+      if (state.recorder && state.recorder.state !== 'inactive') {
+        try { state.recorder.stop(); } catch (e) {}
+      }
       state.recording = false;
       if (recBtn) recBtn.classList.remove('on');
+    }
+    function shareRecording() {
+      var blob = state.lastRecordingBlob;
+      if (!blob) return;
+      var file;
+      try { file = new File([blob], recName(), { type: state.recMime || blob.type || 'video/mp4' }); }
+      catch (e) { file = null; }
+      if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+        navigator.share({ files: [file], title: 'Vídeo' }).catch(function () {});
+        return;
+      }
+      // fallback: abre o vídeo em nova aba para o usuário segurar e "Salvar em Fotos"
+      var url = URL.createObjectURL(blob);
+      var w = window.open();
+      if (w) {
+        w.document.title = recName();
+        w.document.body.style.cssText = 'margin:0;background:#000';
+        var v = w.document.createElement('video');
+        v.src = url; v.controls = true; v.playsInline = true;
+        v.style.cssText = 'width:100%;height:100%';
+        w.document.body.appendChild(v);
+      } else {
+        toast('Permita pop-ups para abrir o vídeo, ou tente pelo Safari normal.');
+      }
     }
     function recName() {
       var ext = (state.recMime && state.recMime.indexOf('mp4') >= 0) ? 'mp4' : 'webm';
@@ -866,7 +923,6 @@
         if (document.fullscreenElement) document.exitFullscreen && document.exitFullscreen().catch(function () {});
         window.removeEventListener('resize', onResize);
         document.removeEventListener('visibilitychange', onVisible);
-        if (state.lastRecordingUrl) URL.revokeObjectURL(state.lastRecordingUrl);
       }
     };
   }
