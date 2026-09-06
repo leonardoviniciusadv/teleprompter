@@ -86,8 +86,8 @@ como PWA nem funciona offline** por HTTP simples; use a Opção A para o uso rea
 | **Manter a tela acesa** | Funciona no iOS **16.4+** (Wake Lock), pedido ao tocar em ▶. Em versões antigas a tela pode apagar — aí deixe o *Bloqueio automático* do iPhone em “Nunca” durante a gravação. |
 | **Travar orientação** | O Safari do iPhone **não** deixa o site travar a orientação. A interface se adapta a retrato e paisagem, mas quem trava é você (Central de Controle). |
 | **Acompanhar a voz** | O reconhecimento de voz da Web no Safari/iOS é **instável**: exige internet, pede permissão de microfone, corta sozinho com frequência e às vezes não funciona dentro do PWA. Por isso é **experimental** e **opcional** — o teleprompter funciona 100% sem ele, no modo velocidade. Se falhar, o app volta sozinho para o modo velocidade. |
-| **Câmera + gravação juntas** | A pré‑visualização da câmera frontal atrás do texto **funciona** no iOS 15+. A **gravação** (`MediaRecorder`) só aparece se o Safari da sua versão suportar; quando grava, a qualidade é menor que a do app Câmera nativo e o arquivo sai em `.mp4`/`.webm` para você salvar manualmente. |
-| **Salvar o vídeo gravado** | O PWA não salva direto no Rolo da Câmera. O app te dá o arquivo para salvar em Arquivos/Fotos. |
+| **Câmera + gravação juntas** | A pré‑visualização da câmera frontal atrás do texto **funciona** no iOS 15+. O botão de **gravar** (círculo vermelho) só aparece se o seu Safari suportar `MediaRecorder` — se não suportar, o app avisa ao ligar a câmera. Qualidade menor que o app Câmera nativo. |
+| **Salvar o vídeo gravado** | Quando a gravação para, aparece **"Salvar vídeo"** na barra de cima (e no resumo final). Ele abre a folha de compartilhamento do iOS (`navigator.share`) → escolha **Salvar em Fotos** ou **em Arquivos**. O PWA não grava sozinho no Rolo. |
 | **Recomendação para vídeo profissional** | Use **dois aparelhos**: grave com a câmera do iPhone (ou câmera dedicada) e use este app em outro aparelho como teleprompter na frente da lente. Ou use o modo espelho com um vidro de teleprompter. O modo câmera embutido é ótimo para Reels/TikTok rápidos. |
 
 ### O que funciona offline
