@@ -700,19 +700,24 @@
         state.recorder.onerror = function () { toast('Erro na gravação.'); };
         state.recorder.onstop = function () {
           aud.getTracks().forEach(function (t) { t.stop(); });
-          var blob = new Blob(state.chunks, { type: mime });
-          if (blob.size < 2048) {
+          // no iOS o MediaRecorder entrega tudo num único chunk no stop; o tipo real
+          // vem do próprio gravador (não do que pedimos).
+          var realType = (state.recorder && state.recorder.mimeType) || mime;
+          var blob = new Blob(state.chunks, { type: realType });
+          if (!state.chunks.length || blob.size < 1024) {
             state.lastRecordingBlob = null;
             toast('A gravação saiu vazia — este navegador não suporta bem.');
           } else {
             state.lastRecordingBlob = blob;
-            state.recMime = mime;
+            state.recMime = realType;
             showTopSaveBtn();
             toast('Gravação pronta. Toque em “Salvar vídeo”.');
           }
           if (state.finished) showSummary(); // reconstrói o resumo já com o botão
         };
-        state.recorder.start(1000);
+        // SEM timeslice: no Safari do iPhone, gravar com start(ms) gera um arquivo
+        // que não pode ser remontado ("WebKitBlobResource erro 1").
+        state.recorder.start();
         state.recording = true;
         recBtn.classList.add('on');
       }).catch(function (e) { state.recTried = true; toast('Microfone negado: ' + (e && e.name || e)); });
@@ -727,26 +732,44 @@
     function shareRecording() {
       var blob = state.lastRecordingBlob;
       if (!blob) return;
-      var file;
-      try { file = new File([blob], recName(), { type: state.recMime || blob.type || 'video/mp4' }); }
+      // tipo "limpo" pra folha de compartilhamento do iOS não estranhar
+      var t = blob.type || state.recMime || '';
+      var shareType = /mp4/i.test(t) ? 'video/mp4' : (/webm/i.test(t) ? 'video/webm' : (t || 'video/mp4'));
+      var file = null;
+      try { file = new File([blob], recName(), { type: shareType }); }
       catch (e) { file = null; }
+
       if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
-        navigator.share({ files: [file], title: 'Vídeo' }).catch(function () {});
+        navigator.share({ files: [file], title: 'Vídeo' }).then(function () {
+          toast('Vídeo enviado. Escolha “Salvar em Vídeos”.');
+        }).catch(function (err) {
+          // AbortError = usuário cancelou; qualquer outra coisa = mostra o player
+          if (err && err.name === 'AbortError') return;
+          showInlinePlayer(blob);
+        });
         return;
       }
-      // fallback: abre o vídeo em nova aba para o usuário segurar e "Salvar em Fotos"
+      showInlinePlayer(blob);
+    }
+
+    // Último recurso: mostra o vídeo na própria tela; no iPhone dá pra segurar o
+    // vídeo e tocar em "Salvar em Vídeos".
+    function showInlinePlayer(blob) {
       var url = URL.createObjectURL(blob);
-      var w = window.open();
-      if (w) {
-        w.document.title = recName();
-        w.document.body.style.cssText = 'margin:0;background:#000';
-        var v = w.document.createElement('video');
-        v.src = url; v.controls = true; v.playsInline = true;
-        v.style.cssText = 'width:100%;height:100%';
-        w.document.body.appendChild(v);
-      } else {
-        toast('Permita pop-ups para abrir o vídeo, ou tente pelo Safari normal.');
-      }
+      var back = h('div', { class: 'sheet-back show' });
+      var v = h('video', { src: url, controls: '', playsinline: '', style: 'width:100%;border-radius:12px;background:#000' });
+      var sheet = h('div', { class: 'sheet' }, [
+        h('div', { class: 'sheet-title', text: 'Seu vídeo' }),
+        v,
+        h('div', { class: 'sheet-msg', text: 'Segure o vídeo e toque em “Salvar em Vídeos” — ou use o botão de compartilhar do player.' }),
+        h('button', { class: 'btn btn-ghost', text: 'Fechar', onclick: function () {
+          back.remove(); URL.revokeObjectURL(url);
+        } })
+      ]);
+      back.appendChild(sheet);
+      back.addEventListener('click', function (e) { if (e.target === back) { back.remove(); URL.revokeObjectURL(url); } });
+      document.body.appendChild(back);
+      v.play().catch(function () {});
     }
     function recName() {
       var ext = (state.recMime && state.recMime.indexOf('mp4') >= 0) ? 'mp4' : 'webm';
